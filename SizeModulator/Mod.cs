@@ -6,7 +6,7 @@ namespace SizeModulator
 {
     public class Mod : PulsarMod
     {
-        public override string Version => "1.0";
+        public override string Version => "1.1";
 
         public override string Author => "pokegustavo";
 
@@ -38,6 +38,8 @@ namespace SizeModulator
             float size;
             if(float.TryParse(arguments,out size)) 
             {
+                if (size > 1000000000) size = 1000000000;
+                else if (size < -1000000000) size = -1000000000;
                 PLNetworkManager.Instance.MyLocalPawn.transform.localScale = new UnityEngine.Vector3(size, size, size);
             }
         }
