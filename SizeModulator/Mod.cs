@@ -2,11 +2,13 @@
 using PulsarModLoader.Chat.Commands.CommandRouter;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using UnityEngine;
 namespace SizeModulator
 {
     public class Mod : PulsarMod
     {
-        public override string Version => "1.1";
+        public override string Version => "1.2";
 
         public override string Author => "pokegustavo";
 
@@ -35,13 +37,36 @@ namespace SizeModulator
         public override void Execute(string arguments)
         {
             if (PLNetworkManager.Instance.MyLocalPawn == null) return;
-            float size;
-            if(float.TryParse(arguments,out size)) 
+            string[] split = arguments.Split(' ');
+            if (split.Length == 1)
             {
-                if (size > 1000000000) size = 1000000000;
-                else if (size < -1000000000) size = -1000000000;
-                PLNetworkManager.Instance.MyLocalPawn.transform.localScale = new UnityEngine.Vector3(size, size, size);
+                if (float.TryParse(arguments, out float size))
+                {
+                    if (size > 1000000000) size = 1000000000;
+                    else if (size < -1000000000) size = -1000000000;
+                    PLNetworkManager.Instance.MyLocalPawn.transform.localScale = new UnityEngine.Vector3(size, size, size);
+                }
             }
+            else if(split.Length == 3)
+            {
+                if (float.TryParse(split[0],out float x) && float.TryParse(split[1], out float y) && float.TryParse(split[2], out float z))
+                {
+                    PLNetworkManager.Instance.MyLocalPawn.transform.localScale = new UnityEngine.Vector3(x, y, z);
+                }
+                else 
+                {
+                    PulsarModLoader.Utilities.Messaging.Notification("Invalid arguments! You must enter a single number or 3 seperate numbers");
+                }
+            }
+            else 
+            {
+                PulsarModLoader.Utilities.Messaging.Notification("Invalid arguments! You must enter a single number or 3 seperate numbers");
+            }
+        }
+
+        public static float GetModifier(Vector3 scale) 
+        {
+            return (scale.x + scale.y + scale.z) / 3;
         }
     }
 
@@ -59,7 +84,7 @@ namespace SizeModulator
                     stream.SendNext(__instance.transform.localScale.z);
 
                 }
-                else
+                else if(stream.Count > 20)
                 {
                     float x = (float)stream.ReceiveNext();
                     float y = (float)stream.ReceiveNext();
@@ -78,7 +103,7 @@ namespace SizeModulator
     {
         static void Postfix(PLPawn ___MySetupPawn, PLBolt newBolt) 
         {
-            newBolt.DamageDoneMultiplier *= ___MySetupPawn.transform.localScale.x;
+            newBolt.DamageDoneMultiplier *= Command.GetModifier(___MySetupPawn.transform.localScale);
         }
     }
     [HarmonyLib.HarmonyPatch(typeof(PLPawnItem_HeldBeamPistol_WithHealing), "CalcDamageDone")]
@@ -86,7 +111,7 @@ namespace SizeModulator
     {
         static void Postfix(ref PLPawn ___MySetupPawn, ref float __result) 
         {
-            __result *= ___MySetupPawn.transform.localScale.x;
+            __result *= Command.GetModifier(___MySetupPawn.transform.localScale);
         }
     }
     [HarmonyLib.HarmonyPatch(typeof(PLPawnItem_HeldBeamPistol_WithHealing), "CalcHealingDone")]
@@ -94,7 +119,7 @@ namespace SizeModulator
     {
         static void Postfix(ref PLPawn ___MySetupPawn, ref float __result)
         {
-            __result *= ___MySetupPawn.transform.localScale.x;
+            __result *= Command.GetModifier(___MySetupPawn.transform.localScale);
         }
     }
     [HarmonyLib.HarmonyPatch(typeof(PLPawnItem_HeldBeamPistol), "CalcDamageDone")]
@@ -102,13 +127,32 @@ namespace SizeModulator
     {
         static void Postfix(ref PLPawn ___MySetupPawn, ref float __result)
         {
-            __result *= ___MySetupPawn.transform.localScale.x;
+            __result *= Command.GetModifier(___MySetupPawn.transform.localScale);
+        }
+    }
+    [HarmonyLib.HarmonyPatch(typeof(PLGrenadeInstance),"Explode")]
+    class GrenadeExplosionSize 
+    {
+        static bool Prefix(PLGrenadeInstance __instance) 
+        {
+            if (__instance.ExplosionPrefab != null)
+            {
+                GameObject gameObject = UnityEngine.Object.Instantiate<GameObject>(__instance.ExplosionPrefab, __instance.transform.position, __instance.transform.rotation);
+                gameObject.layer = __instance.gameObject.layer;
+                gameObject.transform.localScale = __instance.transform.localScale;
+                foreach (object obj in gameObject.transform)
+                {
+                    ((Transform)obj).gameObject.layer = __instance.gameObject.layer;
+                }
+            }
+            UnityEngine.Object.Destroy(__instance.gameObject);
+            return false;
         }
     }
     [HarmonyLib.HarmonyPatch(typeof(PLPawnItem_LauncherBase),"OnActive")]
     class GrenadeSize 
     {
-        static void Postfix(PLPawnItem_LauncherBase __instance, ref List<PLGrenadeInstance> ___GrenadeInstances, ref PLPawn ___MySetupPawn) 
+        static void Postfix(ref List<PLGrenadeInstance> ___GrenadeInstances, ref PLPawn ___MySetupPawn) 
         {
             if (___MySetupPawn == null) return;
             foreach(PLGrenadeInstance grenade in ___GrenadeInstances) 
@@ -147,44 +191,48 @@ namespace SizeModulator
             }
         }
     }
-    [HarmonyLib.HarmonyPatch(typeof(PLPulseGrenadeInstance),"Start")]
-    class PulseGrenadeDamage 
+    [HarmonyLib.HarmonyPatch(typeof(PLPawnItem_LauncherBase), "CalcGrenadePower")]
+    class GrenadePower 
     {
-        static void Postfix(PLPulseGrenadeInstance __instance, PLPlayer ___PlayerOwner, ref float ___DamageMax) 
+        static void Postfix(PLPawn ___MySetupPawn, ref float __result) 
         {
-            if (___PlayerOwner == null || ___PlayerOwner.GetPawn() == null) return;
-            __instance.DamageRadius *= ___PlayerOwner.GetPawn().transform.localScale.x;
-            ___DamageMax *= ___PlayerOwner.GetPawn().transform.localScale.x;
+            __result *= Command.GetModifier(___MySetupPawn.transform.localScale);
         }
     }
-    [HarmonyLib.HarmonyPatch(typeof(PLMiniGrenadeInstance), "Start")]
+    [HarmonyLib.HarmonyPatch(typeof(PLPulseGrenadeInstance),"Update")]
+    class PulseGrenadeDamage 
+    {
+        static void Postfix(PLPulseGrenadeInstance __instance, PLPlayer ___PlayerOwner) 
+        {
+            if (___PlayerOwner == null || ___PlayerOwner.GetPawn() == null) return;
+            __instance.DamageRadius = 7 * Command.GetModifier(___PlayerOwner.GetPawn().transform.localScale);
+        }
+    }
+    [HarmonyLib.HarmonyPatch(typeof(PLMiniGrenadeInstance), "Update")]
     class MiniGrenadeDamage
     {
         static void Postfix(PLMiniGrenadeInstance __instance, PLPlayer ___PlayerOwner)
         {
             if (___PlayerOwner == null || ___PlayerOwner.GetPawn() == null) return;
-            __instance.DamageRadius *= ___PlayerOwner.GetPawn().transform.localScale.x;
-            __instance.DamageMax *= ___PlayerOwner.GetPawn().transform.localScale.x;
+            __instance.DamageRadius = 7 * Command.GetModifier(___PlayerOwner.GetPawn().transform.localScale);
         }
     }
-    [HarmonyLib.HarmonyPatch(typeof(PLStunGrenadeInstance), "Start")]
+    [HarmonyLib.HarmonyPatch(typeof(PLStunGrenadeInstance), "Update")]
     class StunGrenadeDamage
     {
-        static void Postfix(PLStunGrenadeInstance __instance, PLPlayer ___PlayerOwner, ref float ___DamageMax)
+        static void Postfix(PLStunGrenadeInstance __instance, PLPlayer ___PlayerOwner)
         {
             if (___PlayerOwner == null || ___PlayerOwner.GetPawn() == null) return;
-            __instance.DamageRadius *= ___PlayerOwner.GetPawn().transform.localScale.x;
-            ___DamageMax *= ___PlayerOwner.GetPawn().transform.localScale.x;
+            __instance.DamageRadius = 7 * Command.GetModifier(___PlayerOwner.GetPawn().transform.localScale);
         }
     }
-    [HarmonyLib.HarmonyPatch(typeof(PLRepairGrenadeInstance), "Start")]
+    [HarmonyLib.HarmonyPatch(typeof(PLRepairGrenadeInstance), "Update")]
     class RepairGrenadeDamage
     {
-        static void Postfix(PLRepairGrenadeInstance __instance, PLPlayer ___PlayerOwner, ref float ___DamageMax)
+        static void Postfix(PLRepairGrenadeInstance __instance, PLPlayer ___PlayerOwner)
         {
             if (___PlayerOwner == null || ___PlayerOwner.GetPawn() == null) return;
-            __instance.DamageRadius *= ___PlayerOwner.GetPawn().transform.localScale.x;
-            ___DamageMax *= ___PlayerOwner.GetPawn().transform.localScale.x;
+            __instance.DamageRadius = 7 * Command.GetModifier(___PlayerOwner.GetPawn().transform.localScale);
         }
     }
     [HarmonyLib.HarmonyPatch(typeof(PLPawn), "Update")]
@@ -214,7 +262,7 @@ namespace SizeModulator
                     PLServerClassInfo plserverClassInfo = PLServer.Instance.ClassInfos[__instance.GetPlayer().GetClassID()];
                     num11 += (float)plserverClassInfo.SurvivalBonusCounter * 5f;
                 }
-                num11 *= __instance.transform.localScale.x;
+                num11 *= Command.GetModifier(__instance.transform.localScale);
                 if (num11 < 1) num11 = 1f;
                 if (__instance.MaxHealth != num11)
                 {
